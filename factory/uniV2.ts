@@ -16,6 +16,10 @@ const configs: Record<string, Record<string, any>> = {
   'fusionx-v2': {
     [CHAIN.MANTLE]: { factory: '0xe5020961fa51ffd3662cdf307def18f9a87cce7c', fees: 0.25 / 100, userFeesRatio: 1, revenueRatio: 1 / 3, protocolRevenueRatio: 1 / 6 },
   },
+  "zero-swap": {
+    // 0% swap fee uniV2 fork
+    [CHAIN.ROBINHOOD]: { factory: '0xc802A440559cEE8A66E2023403d34Be9084A720e', fees: 0, start: '2026-09-01' },
+  },
   "megaswap": {
     [CHAIN.MEGAETH]: { factory: '0x72B94fA9F854Da1bCCD03F3bAB54cF60C32193F3' },
   },
@@ -735,7 +739,9 @@ const configs: Record<string, Record<string, any>> = {
   },
   "reservoir-tools-amm": {
     [CHAIN.ABSTRACT]: { factory: '0x566d7510dEE58360a64C9827257cF6D0Dc43985E', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
-    [CHAIN.INK]: { factory: '0xfe57A6BA1951F69aE2Ed4abe23e0f095DF500C04', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
+    // Ink is Uniswap's own v2 deployment (Uniswap/contracts deployments/json/57073.json,
+    // Uniswap/sdks V2_FACTORY_ADDRESSES[ChainId.INK]), tracked in dexs/uniswap-v2.ts
+    // [CHAIN.INK]: { factory: '0xfe57A6BA1951F69aE2Ed4abe23e0f095DF500C04', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
     // [CHAIN.ZERO]: { factory: '0x1B4427e212475B12e62f0f142b8AfEf3BC18B559', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
   },
   "shapeswap-v2": {

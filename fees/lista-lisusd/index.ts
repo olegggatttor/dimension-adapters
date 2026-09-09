@@ -19,6 +19,10 @@ const oldTreasury =
   "0x0000000000000000000000008d388136d578dcd791d081c6042284ced6d9b0c6";
 const newTreasury =
   "0x00000000000000000000000034b504a5cf0ff41f8a480580533b6dda687fa3da";
+// Ops Safe — the treasury operations multisig the PSM/Venus USDT profit now lands in (~monthly),
+// after the payout recipient migrated off the old treasury.
+const opsSafe =
+  "0x00000000000000000000000009702ea135d9d707dd51f530864f2b9220aad87b";
 const zeroAddress =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 const transferHash =
@@ -39,6 +43,25 @@ const wbeth = ADDRESSES.bsc.wBETH;
 const bnb = ADDRESSES.bsc.WBNB;
 const lisUSD = "0x0782b6d8c4551B9760e74c0545a9bCD90bdc41E5";
 const usdt = ADDRESSES.bsc.USDT;
+// sLisUSD savings pool (LisUSDPoolSet) — a MakerDAO-DSR-style pool. Depositor value accrues
+// synthetically at the `duty` per-second rate via the getRate() index (getRate = rpow(duty, dt) *
+// rate); the treasury tops the pool up in lisUSD to keep it solvent. The interest earned by
+// third-party sLisUSD depositors is SupplySideRevenue, measured as the exact rate accrual over the
+// period (totalSupply * ΔgetRate / RATE_SCALE) — NOT the lumpy top-up transfers and NOT the
+// EarnPool deposits (which are user principal: USDT sold via PSM into lisUSD via depositFor).
+const LISUSD_POOL_SET = "0x37DB1AE9B24055D1F9fE973Aea40B7EB2995D0Bf";
+const RATE_SCALE = 10n ** 27n;
+
+// Validator / node-operation rewards (BNB-denominated). Track both paths:
+// 1. ListaDAOCredit SafeReceived — historical revenue before the migration.
+// 2. stListaDAO mints to the reward collector — current revenue flow.
+const listaDAOCredit = "0x0D92Ac7a4590874a493eB62b37D3Ea3390966B13";
+const stListaDAO = "0xc096e7781c95a2fc6feb1efe776b570270b3965d";
+const validatorRewardCollector =
+  "0x0000000000000000000000007766a5ee8294343bf6c8dcf3aa4b6d856606703a";
+// One-off startup funding mint — not revenue, excluded.
+const VALIDATOR_STARTUP_TX =
+  "0x0a6b673be9105a33756f4c6a6213ad4712c027c6ea001a9717f1a0b13fcdc343";
 
 // Liquidation profit: Moolah / broker liquidations settle their USDT profit to this receiver
 const liquidatorProfitReceiver =
@@ -61,6 +84,7 @@ const USDT_STAKING_PROFIT = "USDT Staking Profit";
 const VALIDATOR_REWARDS = "Validator Rewards";
 const LP_STAKING_REWARDS = "LP Staking Rewards";
 const FREEZE_LISTA = "Freeze LISTA";
+const LSR_SAVINGS_COST = "sLisUSD Savings Cost";
 
 const fetch = async (options: FetchOptions) => {
   const dailyFees = options.createBalances();
@@ -141,15 +165,21 @@ const fetch = async (options: FetchOptions) => {
     ],
   });
 
-  // USDT staking profit - venusAdaptor
-  const usdtStakingProfit = await options.getLogs({
-    target: usdt,
-    topics: [
-      transferHash,
-      "0x000000000000000000000000f76d9cfd08df91491680313b1a5b44307129cda9",
-      "0x0000000000000000000000008d388136d578dcd791d081c6042284ced6d9b0c6",
-    ],
-  });
+  // USDT staking profit - venusAdaptor. The claimed profit's recipient migrated from the old
+  // treasury to the Ops Safe (~monthly claim), so query both: old treasury keeps historical days
+  // correct, Ops Safe captures the current revenue that was previously being missed.
+  const venusAdaptorTopic =
+    "0x000000000000000000000000f76d9cfd08df91491680313b1a5b44307129cda9";
+  const usdtStakingProfit = [
+    ...(await options.getLogs({
+      target: usdt,
+      topics: [transferHash, venusAdaptorTopic, oldTreasury],
+    })),
+    ...(await options.getLogs({
+      target: usdt,
+      topics: [transferHash, venusAdaptorTopic, opsSafe],
+    })),
+  ];
 
   // veLista Auto Compound Fee - VeListaAutoCompounder
   const veListaAutoCompoundFee = await options.getLogs({
@@ -161,15 +191,19 @@ const fetch = async (options: FetchOptions) => {
     ],
   });
 
-  // validaator rewards - stake ListaDAOCredit
-  const validatorRewards = await options.getLogs({
-    target: "0x0D92Ac7a4590874a493eB62b37D3Ea3390966B13",
-    // topics: [
-    //   "0x8119d5d4b103c44e50f575099834c726e011a0ffd633ba386e8e0a0d61c659c3" // SafeReceived event topic
-    // ],
+  const validatorRewardsListaDAOCredit = await options.getLogs({
+    target: listaDAOCredit,
     eventAbi: "event SafeReceived(address indexed sender, uint256 value)",
   });
-
+  const validatorRewardsStListaDAO = (
+    await options.getLogs({
+      target: stListaDAO,
+      topics: [transferHash, zeroAddress, validatorRewardCollector],
+    })
+  ).filter(
+    (log: any) =>
+      (log.transactionHash ?? "").toLowerCase() !== VALIDATOR_STARTUP_TX,
+  );
   // LP staking rewards
   const lpStakeRewardsFromHash =
     "0x00000000000000000000000062dfec5c9518fe2e0ba483833d1bad94ecf68153";
@@ -234,8 +268,11 @@ const fetch = async (options: FetchOptions) => {
   [...usdtStakingProfit].forEach((log) => {
     dailyFees.add(usdt, Number(log.data), USDT_STAKING_PROFIT);
   });
-  [...validatorRewards].forEach((log) => {
+  [...validatorRewardsListaDAOCredit].forEach((log) => {
     dailyFees.add(bnb, Number(log.value), VALIDATOR_REWARDS);
+  });
+  [...validatorRewardsStListaDAO].forEach((log) => {
+    dailyFees.add(bnb, Number(log.data), VALIDATOR_REWARDS);
   });
   [...lpStakingListaRewards].forEach((log) => {
     dailyFees.add(lista, Number(log.data), LP_STAKING_REWARDS);
@@ -250,10 +287,35 @@ const fetch = async (options: FetchOptions) => {
     dailyFees.add(usdt, Number(log.data), LIQUIDATION_PROFIT);
   });
 
+  // sLisUSD savings cost (LSR): the sLisUSD savings pool (LisUSDPoolSet) pays third-party
+  // depositors the `duty` per-second rate, accrued synthetically through the getRate() index. That
+  // interest is SupplySideRevenue and the protocol's Revenue is net of it (the treasury funds it
+  // out of the lisUSD revenue already counted in Fees above). Measure the exact accrual over the
+  // period — the interest the pool actually pays — rather than the treasury's lumpy top-up
+  // transfers. NOTE: the EarnPool -> pool transfers are user deposits (USDT sold via PSM into
+  // lisUSD, credited to the depositor via depositFor), i.e. principal, NOT cost — excluded.
+  const [rateFrom, rateTo, poolSupply] = await Promise.all([
+    options.fromApi.call({ target: LISUSD_POOL_SET, abi: "uint256:getRate" }),
+    options.toApi.call({ target: LISUSD_POOL_SET, abi: "uint256:getRate" }),
+    options.fromApi.call({ target: LISUSD_POOL_SET, abi: "uint256:totalSupply" }),
+  ]);
+  const savingsInterest =
+    (BigInt(poolSupply) * (BigInt(rateTo) - BigInt(rateFrom))) / RATE_SCALE;
+
+  const dailySupplySideRevenue = options.createBalances();
+
+  dailySupplySideRevenue.add(lisUSD, savingsInterest, LSR_SAVINGS_COST);
+
+
+  // Revenue = collected income kept by the protocol, net of the savings interest paid to depositors.
+  const dailyRevenue = dailyFees.clone();
+  dailyRevenue.subtract(dailySupplySideRevenue, LSR_SAVINGS_COST);
+
   return {
     dailyFees,
-    dailyRevenue: dailyFees,
-    dailyProtocolRevenue: dailyFees,
+    dailyRevenue,
+    dailyProtocolRevenue: dailyRevenue,
+    dailySupplySideRevenue,
   };
 };
 
@@ -266,14 +328,26 @@ const LISUSD_BREAKDOWN = {
   [VELISTA_AUTO_COMPOUND_FEE]: 'Fee taken on veLista auto-compounding',
   [PSM_CONVERT_FEE]: 'PSM (USDT) conversion fee',
   [USDT_STAKING_PROFIT]: 'Profit from USDT staking via VenusAdapter',
-  [VALIDATOR_REWARDS]: 'BNB validator staking rewards',
+  [VALIDATOR_REWARDS]:
+    'BNB validator / node-operation rewards (ListaDAOCredit SafeReceived historically; stListaDAO minted to the reward collector currently)',
   [LP_STAKING_REWARDS]: 'CAKE / LISTA rewards from PancakeSwap LP staking',
   [FREEZE_LISTA]: 'Frozen (burned) LISTA deducted from revenue',
+};
+
+const REVENUE_BREAKDOWN = {
+  ...LISUSD_BREAKDOWN,
+  [LSR_SAVINGS_COST]:
+    'sLisUSD savings interest (duty rate accrual) paid to depositors, deducted from revenue.',
 };
 
 const adapter: SimpleAdapter = {
   version: 2,
   pullHourly: true,
+  // ListaRevenueDistributor funds the sLisUSD savings pool in lumps, so on a distribution hour the
+  // treasury-leg savings payout can exceed that hour's collected income and push Revenue negative.
+  // This is expected lumpiness that nets out cumulatively (the borrow interest behind it was booked
+  // in earlier hours) — keep such hours rather than throwing.
+  allowNegativeValue: true,
   adapter: {
     [CHAIN.BSC]: {
       fetch,
@@ -282,13 +356,15 @@ const adapter: SimpleAdapter = {
   },
   methodology: {
     Fees: 'All protocol income collected by Lista DAO on BSC (staking profits, borrow interest, liquidation profit, and PSM/veLista/LP/validator fees), net of frozen LISTA.',
-    Revenue: 'All collected income goes to the protocol treasury.',
-    ProtocolRevenue: 'All collected income goes to the protocol treasury.',
+    Revenue: 'Collected income kept by the protocol, net of the sLisUSD savings interest paid out to sLisUSD depositors.',
+    ProtocolRevenue: 'Collected income kept by the protocol treasury, net of the sLisUSD savings interest.',
+    SupplySideRevenue: 'Interest earned by third-party sLisUSD depositors in the savings pool (LisUSDPoolSet), measured as the duty-rate accrual over the period (totalSupply * change in getRate index).',
   },
   breakdownMethodology: {
     Fees: LISUSD_BREAKDOWN,
-    Revenue: LISUSD_BREAKDOWN,
-    ProtocolRevenue: LISUSD_BREAKDOWN,
+    Revenue: REVENUE_BREAKDOWN,
+    ProtocolRevenue: REVENUE_BREAKDOWN,
+    SupplySideRevenue: { [LSR_SAVINGS_COST]: 'Duty-rate interest accrued to sLisUSD depositors in LisUSDPoolSet over the period.' },
   }
 };
 

@@ -293,7 +293,9 @@ const configs: Record<string, Record<string, any>> = {
   },
   "reservoir-tools-clmm": {
     [CHAIN.ABSTRACT]: { factory: '0xA1160e73B63F322ae88cC2d8E700833e71D0b2a1', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
-    [CHAIN.INK]: { factory: '0x640887A9ba3A9C53Ed27D0F7e8246A4F933f3424', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
+    // Ink is Uniswap's own v3 deployment (Uniswap/contracts deployments/json/57073.json; factory
+    // owner is the CrossChainAccount forwarding from the Uniswap timelock), tracked in dexs/uniswap-v3.ts
+    // [CHAIN.INK]: { factory: '0x640887A9ba3A9C53Ed27D0F7e8246A4F933f3424', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
     //[CHAIN.ZERO]: { factory: '0xA1160e73B63F322ae88cC2d8E700833e71D0b2a1', start: '2025-12-21', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
     [CHAIN.REDSTONE]: { factory: '0xece75613Aa9b1680f0421E5B2eF376DF68aa83Bb', start: '2025-01-07', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, holdersRevenueRatio: 0 },
   },
@@ -415,9 +417,6 @@ const configs: Record<string, Record<string, any>> = {
   },
   'sheriff-v3': { 
     [CHAIN.ROBINHOOD]: { factory: '0x21Fd9aB06cc927E66013e89b045c26b3eDE7bB20', start: "2026-07-06", isAlgebraV3: true, userFeesRatio: 1, revenueRatio: 0.2, protocolRevenueRatio: 0.2 },
-  },
-  'giga-dex-cl': {
-    [CHAIN.ROBINHOOD]: { factory: '0xEce6eCd61177336ea6Fb9b17937AC439D85EE20B', start: "2026-07-15", swapEvent: protocolFeesSwapEvent, userFeesRatio: 1, revenueRatio: 0.2, protocolRevenueRatio: 0.2 }
   },
   "betterswap-v3": {
     [CHAIN.VECHAIN]: { factory: '0xf9f1722f95d036efbd1352d84e3a3755f8027b39', userFeesRatio: 1, revenueRatio: 0, protocolRevenueRatio: 0, start: "2026-07-20", },
